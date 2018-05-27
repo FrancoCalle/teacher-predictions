@@ -5,73 +5,113 @@ import os
 from matplotlib import pyplot
 import matplotlib.pyplot as plt
 import plotly.plotly as py
+from sklearn import datasets, linear_model, preprocessing
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn import tree, svm
+from sklearn.metrics import accuracy_score, roc_auc_score
 
 
-
-df_path = os.getcwd() + '\data\entrancescore-evdocente-noid.csv'
+#df_path = os.getcwd() + '\data\entrancescore-evdocente-noid.csv'
+df_path = os.getcwd() + '\data\PAA-evdoc.csv'
 df = None
 #with open(df_path, encoding="utf-16") as f:
 with open(df_path, "r") as f:
     df = pd.read_csv(f)
 
-list(df)
-df.head(3)
 
+#Quick df clean:
+scores = ['paa_verbal', 'paa_matematica', 'pce_hria_y_geografia', 'pce_biologia', 'pce_cs_sociales', 'pce_fisica', 'pce_matematica', 'pce_quimica']
+cat = ['region', 'male']
+df_s = df[scores].copy()
+x_mean = df[scores].mean()
+x_std = df[scores].std()
+df_s = (df[scores] - df[scores].mean())/df[scores].std()
+df_s['Average'] = (df['paa_verbal'] + df['paa_matematica'])/2
+
+df_c = df[cat].copy()
+
+df_s['took_hist'] = (df.pce_hria_y_geografia == 0)
+df_s['took_bio'] = (df.pce_biologia == 0)
+df_s['took_soc'] = (df.pce_cs_sociales == 0)
+df_s['took_fis'] = (df.pce_fisica == 0)
+df_s['took_mat'] = (df.pce_matematica == 0)
+df_s['took_qui'] = (df.pce_quimica == 0)
+
+y = df['pf_pje']
+
+df = pd.concat([df_s, df_c, y], axis=1, sort=False)
+
+df = df.dropna()
+df.region = df.region.astype(int)
+df.male = df.male.astype(int)
+
+#Generate dichotomous variables by region
+for x in set(df.region):
+    df['region' + str(x)] = df.region == x
 
 #Divide the sample distribution in 10 types:
-df['xtile'] = pd.qcut(df.pf, 10, labels = ['percentil: '+str(i) for i in range(10)])
+df['xtile'] = pd.qcut(df.pf_pje, 10, labels = ['percentil: '+str(i) for i in range(10)])
 df['worst'] = (df['xtile'] == 'percentil: 0' )| (df['xtile'] == 'percentil: 1')| (df['xtile'] == 'percentil: 2')
 
 
-#Create a histogram:
-list(df)
+df.columns = ['paaverbal' if x=='paa_verbal' else 'paamat' if x =='paa_matematica' else x for x in df.columns] #Change colname
 
-#Generate graphs: Histograms
-pyplot.hist((df.paaverbal.dropna()-df.paaverbal.mean())/df.paaverbal.std(), 100, alpha=0.5, label='PAA - Verbal')
-pyplot.hist((df.pf.dropna()-df.pf.mean())/df.pf.std(), 100, alpha=0.5, label='PJ - Portfolio')
-pyplot.legend(loc='upper right')
-pyplot.show()
+x_variables = [x if (x!='pf_pje' and x!='xtile' and x!='worst' and x!='region9') else "AAA" for x in list(df)]
+x_variables = sorted(list(set(x_variables)))
+del x_variables[0]
 
-#Generate graphs: Scatters:
-#NEM vs PF_PJE:
-df1 = df.sort_values(by = ['pf_pje'])
-df1['xtile'] = pd.qcut(df1.pf_pje, 50, labels = list(range(50)))
-scatter1 = df1[['pf', 'paaverbal', 'paamat']].groupby(df1['xtile']).mean()
-plt.scatter((scatter1.paaverbal.dropna()-scatter1.paaverbal.mean())/scatter1.paaverbal.std(), (scatter1.pf.dropna()-scatter1.pf.mean())/scatter1.pf.std(), c="r", alpha=0.5, label="Correlation")
-plt.xlabel("PAA - Verbal")
-plt.ylabel("PJ - Portfolio")
-plt.legend(loc=2)
-plt.show()
-
-df['paaverbal'].isnull().sum()
-df['paamat'].isnull().sum()
-
-
-
-#Generate Machine Learning Models:
-#Using regression trees:
-from sklearn import datasets, linear_model, preprocessing
-from sklearn.pipeline import make_pipeline
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn import tree, svm
-from sklearn.metrics import accuracy_score, roc_auc_score
-
-df = df.dropna()
-X = df[['paaverbal','paamat']].dropna()
-X['Average'] = (X['paaverbal'] + X['paamat'])/2
-X_mean = np.mean(X,1)
-X_transformed = (X- X.mean())/X.std()
-
+X_transformed = df[x_variables].dropna().drop(columns = ['region'])
 Y = df['worst']
 
-X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed[['paaverbal','paamat']], Y, test_size=0.2)
+X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed, Y, test_size=0.15)
+
+resampling = 0
+if resampling == 1:
+    Train_set = X_train_transformed.copy()
+    Test_set = X_test_transformed.copy()
+    Train_set['y_train'] = y_train
+    Train_set['random'] = np.random.randn(X_train_transformed.shape[0],1)
+    n_true = Train_set[Train_set.y_train == 1].shape[0]
+    n_false = Train_set[Train_set.y_train == 0].shape[0]
+    n_start = n_false - n_true
+    Train_set = Train_set.sort_values(by = ['y_train','random']).reset_index().iloc[n_start:]
+
+    x_variables = [x if (x!='index' and x!='random' and x!='y_train' and x!='region9' ) else 'AAA' for x in list(Train_set)]
+    x_variables = sorted(list(set(x_variables)))
+    del x_variables[0]
+    X_train_transformed = Train_set[x_variables]
+    X_test_transformed = Test_set[x_variables]
+    y_train = Train_set.y_train
+
+'''
+    #Generate graphs: Histograms
+    pyplot.hist((df.paaverbal.dropna()-df.paaverbal.mean())/df.paaverbal.std(), 100, alpha=0.5, label='PAA - Verbal')
+    pyplot.hist((df.pf.dropna()-df.pf.mean())/df.pf.std(), 100, alpha=0.5, label='PJ - Portfolio')
+    pyplot.legend(loc='upper right')
+    pyplot.show()
+
+    #Generate graphs: Scatters:
+    #NEM vs PF_PJE:
+    df1 = df.sort_values(by = ['pf_pje'])
+    df1['xtile'] = pd.qcut(df1.pf_pje, 50, labels = list(range(50)))
+    scatter1 = df1[['pf', 'paaverbal', 'paamat']].groupby(df1['xtile']).mean()
+    plt.scatter((scatter1.paaverbal.dropna()-scatter1.paaverbal.mean())/scatter1.paaverbal.std(), (scatter1.pf.dropna()-scatter1.pf.mean())/scatter1.pf.std(), c="r", alpha=0.5, label="Correlation")
+    plt.xlabel("PAA - Verbal")
+    plt.ylabel("PJ - Portfolio")
+    plt.legend(loc=2)
+    plt.show()
+
+    df['paaverbal'].isnull().sum()
+    df['paamat'].isnull().sum()`
+'''
 
 
-#Use logistic regression and make predictions and graphs:
-#=======================================================
 
+#Define some useful functions:
+#============================
 
 def plot_estimates(df_lr_test, variable, bins, npol, polfit):
     df_lr_test['xtile'] = pd.cut(df_lr_test.y_test_hat, bins, duplicates='drop', labels = list(range(bins)))
@@ -85,27 +125,28 @@ def plot_estimates(df_lr_test, variable, bins, npol, polfit):
         plt.scatter(scatter1[variable], scatter1.y_test_hat, c="r", alpha=0.5, label="Correlation")
         plt.plot(x_new, y_new, c='gray')
         plt.xlabel("PAA - " + variable)
-        plt.ylabel("PJ - Portfolio")
+        plt.ylabel("Prob - Bad Teacher")
         plt.legend(loc=1)
         plt.show()
     else:
         plt.scatter(scatter1['variable'], scatter1.y_test_hat, c="g", alpha=0.5, label="Correlation")
         plt.xlabel("PAA - " + variable)
-        plt.ylabel("PJ - Portfolio")
+        plt.ylabel("Prob - Bad Teacher")
         plt.legend(loc=1)
         plt.show()
-
 
 
 def gen_predictions(Classifier, X_train, X_test, y_train):
     from sklearn import tree, svm
     SVC = svm.SVC
     if Classifier == SVC:
-        clf = Classifier(probability=True)
+        clf = Classifier(C=50, probability=True)
     else:
         clf = Classifier()
     clf = clf.fit(X_train, y_train)
+
     y_test_hat = clf.predict_proba(X_test)[:,1]  #Prob of bad Teacher
+    y_test_predict = clf.predict(X_test)  #Prob of bad Teacher
 
     ndf = y_test_hat.shape[0]
     df_ml_test = np.concatenate([y_test_hat.reshape(ndf,1), np.array(X_test['paaverbal']).reshape(ndf,1), np.array(X_test['paamat']).reshape(ndf,1)],1)
@@ -113,74 +154,152 @@ def gen_predictions(Classifier, X_train, X_test, y_train):
     df_ml_test['Average'] = (df_ml_test['Verbal'] + df_ml_test['Math'])/2
     df_ml_test = df_ml_test.sort_values(by = ['y_test_hat'])
 
-    return df_ml_test, y_test_hat
-
+    return df_ml_test, clf.predict_proba(X_test), y_test_predict
 
 # Options: RandomForestClassifier, LogisticRegression, DecisionTreeClassifier svm.SVC
+df_rf_test , y_test_hat, y_test_predict = gen_predictions(RandomForestClassifier, X_train_transformed.drop(columns = ['Average']), X_test_transformed.drop(columns = ['Average']), y_train)
 
+#Accuracy tests:
+accuracy = np.mean(y_test_predict == y_test)
+type1_error = 1 - np.mean(y_test[y_test==1] == y_test_predict[y_test==1]) #Type 1 error: Probabilidad de predecir que no es malo cuando si lo es
+type2_error = 1 - np.mean(y_test[y_test_predict == 1] == y_test_predict[y_test_predict == 1]) #probabilidad de predecir que profesor es malo cuando en realidad es bueno (Error tipo 2)
 
-df_rf_test , y_test_hat = gen_predictions(RandomForestClassifier, X_train_transformed, X_test_transformed, y_train)
-
-plot_estimates(df_rf_test,'Average', 35, 2, 1)
-plot_estimates(df_rf_test,'Math', 35, 2, 1)
-plot_estimates(df_rf_test,'Verbal', 35, 3, 1)
-
-
-
-
-
-
+#Plot results
+plot_estimates(df_rf_test,'Average', 10, 2, 1)
+plot_estimates(df_rf_test,'Math', 10, 2, 1)
+plot_estimates(df_rf_test,'Verbal', 10, 3, 1)
 
 
 
+# Sensibility analysis:
+accuracy_list = []
+pr_list = list(np.unique(y_test_hat[:,1][y_test_hat[:,1]>=.5]))
+for pr in pr_list:
+    acc = np.mean(y_test[y_test_hat[:,1]>=pr] == y_test_predict[y_test_hat[:,1]>=pr])
+    accuracy_list.append(acc)
+
+ticks = np.arange(len(accuracy_list))
+ticks_label = ['Pr: ' + str(x) for x in pr_list]
+plt.bar(ticks,accuracy_list, align='center', alpha=0.5, color = 'g')
+plt.xticks(ticks, ticks_label)
+plt.xlabel('Y hat')
+plt.ylabel('Accuracy: 1 - Pr(failure)')
+plt.title('Likelihood of failure when predicting bad teacher')
+plt.show()
+
+#Then: we should work with RandomForestClassifier
+
+##########################################
+#Start with the Score Sensibility analysis
+##########################################
+
+
+#initialize some elements:
 math_lb_list = []
 lang_lb_list = []
 avg_lb_list = []
 
+lang_mean = X.mean()[0]
+mat_mean = X.mean()[1]
+avg_mean = X.mean()[2]
 
-for i in range(10000):
-    X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed, Y, test_size=0.2)
+lang_std = X.std()[0]
+mat_std = X.std()[1]
+avg_std = X.std()[2]
 
+
+avg_std_list = [(300 + 3*i)  for i in range(101)]
+avg_std_list = (avg_std_list - avg_mean)/avg_std
+
+
+#CrossValidation Excercise
+accuracy_type2 = []
+accuracy_overall = []
+for i in range(200):
+
+    X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed.drop(columns = ['Average']), Y, test_size=0.15)
     clf = RandomForestClassifier()
     clf = clf.fit(X_train_transformed, y_train)
-    y_test_hat = clf.predict_proba(X_test_transformed)[:,1]  #Prob of bad Teacher
+    y_test_hat = clf.predict(X_test_transformed)  #Prob of bad Teacher
+    acc_overall = np.mean(y_test == y_test_hat)
+    acc_type2 = np.mean(y_test[y_test_hat==1] == y_test_hat[y_test_hat==1])
+    accuracy_overall.append(acc_overall)
+    accuracy_type2.append(acc_type2)
 
-    z = np.polyfit(y_test_hat, X_test_transformed['paaverbal'], 1) #Verbal
-    f = np.poly1d(z)
-    f = np.array(f)
-    lowest_v_std = (.9-f[1])/f[0]
-    lowest_v = lowest_v_std*X.std()[0] + X.mean()[0]
+plt.hist(accuracy_overall, alpha=0.3, color = 'g', label = 'Overall')
+plt.hist(accuracy_type2, alpha=0.3, color = 'maroon', label = 'Y = 1')
+plt.xlabel('Prediction success')
+plt.ylabel('Density')
+plt.title('Cross validation: Accuracy of Random Forest')
+plt.legend(loc=1)
+plt.show()
 
-    z = np.polyfit(y_test_hat, X_test_transformed['paamat'], 1) #Matematicas
-    f = np.poly1d(z)
-    f = np.array(f)
-    lowest_m_std = (.9-f[1])/f[0]
-    lowest_m = lowest_m_std*X.std()[1] + X.mean()[1]
 
-    z = np.polyfit(y_test_hat, np.mean(X_test_transformed,1), 1) #Average
-    f = np.poly1d(z)
-    f = np.array(f)
-    lowest_avg_std = (.9-f[1])/f[0]
-    lowest_avg = lowest_avg_std*X.std()[2] + X.mean()[2]
+#Generate data to play with:
+#First: fit the RandomForestClassifier
+df = X_transformed.drop(columns = ['Average']).copy()
+list(df)
+len(list(df))
+X_transformed.shape
 
-    lang_lb_list.append(lowest_v)
-    math_lb_list.append(lowest_m)
-    avg_lb_list.append(lowest_avg)
 
-pyplot.hist(np.array(lang_lb_list), 20, alpha=0.5, color='g', label='PAA - Verbal LB')
-pyplot.hist(np.array(math_lb_list), 20, alpha=0.5, color='maroon',label='PAA - Math LB')
-pyplot.hist(np.array(avg_lb_list), 20, alpha=0.5, color='blue', label='PAA - Average LB')
+
+sex       = [np.random.binomial(1,[.2])[0]]
+score     = [df.paamat.mean(), df.paaverbal.mean(), df.pce_biologia.mean(), df.pce_cs_sociales.mean(),
+             df.pce_fisica.mean(), df.pce_hria_y_geografia.mean(), df.pce_matematica.mean(), df.pce_quimica.mean()]
+region    = list(np.random.multinomial(1, [1/14.]*14, size=1)[0])
+took_exam = [1, 1, 1, 1, 1, 1]
+
+x_test = sex + score + region + took_exam
+
+y_test_hat = clf.predict(np.array(X_test)[np.newaxis,:])
+
+
+
+
+
+for i in range(20):
+
+    #Second: asume different levels of y_hat and retrieve the accuracy rate in different lower bounds so we can assess the accuracy tradeoff:
+    #1.a. Assume a teacher with Avg = 400
+    y_pred_list = avg_std_list*f[0]  + f[1]
+
+    for pred in y_pred_list:
+        y_hat = np.mean(y_test[y_test_hat> 0.6])
+
+
+    if i % 500 == 0:
+        print('Iteration number: ' + str(i))
+
+
+pyplot.hist(np.array(lang_lb_list), 50, alpha=0.5, color='g', label='PAA - Verbal LB')
+pyplot.hist(np.array(math_lb_list), 50, alpha=0.5, color='maroon',label='PAA - Math LB')
+pyplot.hist(np.array(avg_lb_list), 50, alpha=0.5, color='blue', label='PAA - Average LB')
 pyplot.legend(loc='upper right')
 pyplot.show()
-
-
-
 
 np.mean(np.array(lang_lb_list))
 np.mean(np.array(math_lb_list))
 np.mean(np.array(avg_lb_list))
 
 
+#Now create histograms to see the ammount of people that could be out of the system because of lower bound:
+
+pyplot.hist(X['Average'], 200, alpha=0.5, label='PAA - Average')
+plt.axvline(x=np.mean(np.array(avg_lb_list)))
+pyplot.legend(loc='upper right')
+pyplot.show()
+
+np.mean(X['Average'] <= np.mean(np.array(avg_lb_list)))
+
+
+
+
+np.mean(y_test[y_test_hat> 0.5])
+
+np.mean(y_test[y_test_hat> 0.7])
+np.mean(y_test[y_test_hat> 0.8])
+np.mean(y_test[y_test_hat> 0.9])
 
 
 
@@ -195,16 +314,22 @@ np.mean(np.array(avg_lb_list))
 
 
 
+scatter = X_train_transformed.copy()
+scatter['y'] = y_train
+scatter['randn'] = np.random.randn(X_train_transformed.shape[0])
+scatter = scatter.sort_values(by = ['randn'])
+scatter = scatter[scatter['randn'] < -2]
+scatter.shape
+scatter.randn.mean()
 
 
 
-
-
-
-
-
-
-
+plt.scatter(scatter.paaverbal[y_train == 1], scatter.paamat[y_train == 1], c="r", alpha=0.5, label="Bad Teachers")
+plt.scatter(scatter.paaverbal[y_train == 0], scatter.paamat[y_train == 0], c="b", alpha=0.5, label="Good Teachers")
+plt.xlabel("PAA - Verbal")
+plt.ylabel("PAA - Math")
+plt.legend(loc=2)
+plt.show()
 
 
 

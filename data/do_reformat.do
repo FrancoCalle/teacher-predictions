@@ -1,2 +1,2 @@
-use "C:\Users\Franco\GitHub\teacher-predictions\data\entrancescore-evdocente-noid.dta"
-outsheet * using "C:\Users\Franco\GitHub\teacher-predictions\data\entrancescore-evdocente-noid.csv" , comma nolabel replace
+use "C:\Users\Franco\GitHub\teacher-predictions\data\PAA-evdoc.dta"
+outsheet * using "C:\Users\Franco\GitHub\teacher-predictions\data\PAA-evdoc.csv" , comma nolabel replace
