@@ -5,6 +5,7 @@ import os
 from matplotlib import pyplot
 import matplotlib.pyplot as plt
 import plotly.plotly as py
+from scipy import stats
 from sklearn import datasets, linear_model, preprocessing
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -12,7 +13,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn import tree, svm
 from sklearn.metrics import accuracy_score, roc_auc_score
-
+from sklearn.linear_model import LinearRegression
 
 #df_path = os.getcwd() + '\data\entrancescore-evdocente-noid.csv'
 df_path = os.getcwd() + '\data\PAA-evdoc.csv'
@@ -21,9 +22,13 @@ df = None
 with open(df_path, "r") as f:
     df = pd.read_csv(f)
 
+q_v    = df["paa_verbal"].quantile(0.99)
+q_m = df["paa_matematica"].quantile(0.99)
+
+df = df[(df.paa_verbal<q_v) | (df.paa_matematica<q_m)]
 
 #Quick df clean:
-scores = ['paa_verbal', 'paa_matematica', 'pce_hria_y_geografia', 'pce_biologia', 'pce_cs_sociales', 'pce_fisica', 'pce_matematica', 'pce_quimica']
+scores = ['paa_verbal', 'paa_matematica', 'nem', 'gpa', 'pce_hria_y_geografia', 'pce_biologia', 'pce_cs_sociales', 'pce_fisica', 'pce_matematica', 'pce_quimica']
 cat = ['region', 'male']
 df_s = df[scores].copy()
 x_mean = df[scores].mean()
@@ -54,7 +59,7 @@ for x in set(df.region):
 
 #Divide the sample distribution in 10 types:
 df['xtile'] = pd.qcut(df.pf_pje, 10, labels = ['percentil: '+str(i) for i in range(10)])
-df['worst'] = (df['xtile'] == 'percentil: 0' )| (df['xtile'] == 'percentil: 1')| (df['xtile'] == 'percentil: 2')
+df['worst'] = (df['xtile'] == 'percentil: 0' )| (df['xtile'] == 'percentil: 1')
 
 
 df.columns = ['paaverbal' if x=='paa_verbal' else 'paamat' if x =='paa_matematica' else x for x in df.columns] #Change colname
@@ -63,9 +68,10 @@ x_variables = [x if (x!='pf_pje' and x!='xtile' and x!='worst' and x!='region9')
 x_variables = sorted(list(set(x_variables)))
 del x_variables[0]
 
-X_transformed = df[x_variables].dropna().drop(columns = ['region'])
+X_transformed = df[x_variables].dropna().drop(columns = ['region', 'pce_biologia', 'pce_cs_sociales', 'pce_fisica', 'pce_hria_y_geografia', 'pce_matematica', 'pce_quimica',
+'region1', 'region2', 'region3', 'region4', 'region5', 'region6', 'region7', 'region8', 'region10', 'region11', 'region12', 'region13', 'region14', 'region15',
+'took_bio', 'took_fis', 'took_hist', 'took_mat', 'took_qui', 'took_soc'])
 Y = df['worst']
-
 X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed, Y, test_size=0.15)
 
 resampling = 0
@@ -140,7 +146,7 @@ def gen_predictions(Classifier, X_train, X_test, y_train):
     from sklearn import tree, svm
     SVC = svm.SVC
     if Classifier == SVC:
-        clf = Classifier(C=50, probability=True)
+        clf = Classifier(C=1, probability=True)
     else:
         clf = Classifier()
     clf = clf.fit(X_train, y_train)
@@ -165,11 +171,11 @@ type1_error = 1 - np.mean(y_test[y_test==1] == y_test_predict[y_test==1]) #Type 
 type2_error = 1 - np.mean(y_test[y_test_predict == 1] == y_test_predict[y_test_predict == 1]) #probabilidad de predecir que profesor es malo cuando en realidad es bueno (Error tipo 2)
 
 #Plot results
-plot_estimates(df_rf_test,'Average', 10, 2, 1)
-plot_estimates(df_rf_test,'Math', 10, 2, 1)
-plot_estimates(df_rf_test,'Verbal', 10, 3, 1)
+plot_estimates(df_rf_test,'Average', 15, 1, 1)
+plot_estimates(df_rf_test,'Math', 15, 1, 1)
+plot_estimates(df_rf_test,'Verbal', 15, 1, 1)
 
-
+plt.scatter(y_test_hat[:,1],df_rf_test.Verbal)
 
 # Sensibility analysis:
 accuracy_list = []
@@ -179,7 +185,8 @@ for pr in pr_list:
     accuracy_list.append(acc)
 
 ticks = np.arange(len(accuracy_list))
-ticks_label = ['Pr: ' + str(x) for x in pr_list]
+ticks_label = [str(x) for x in pr_list]
+
 plt.bar(ticks,accuracy_list, align='center', alpha=0.5, color = 'g')
 plt.xticks(ticks, ticks_label)
 plt.xlabel('Y hat')
@@ -193,29 +200,10 @@ plt.show()
 #Start with the Score Sensibility analysis
 ##########################################
 
-
-#initialize some elements:
-math_lb_list = []
-lang_lb_list = []
-avg_lb_list = []
-
-lang_mean = X.mean()[0]
-mat_mean = X.mean()[1]
-avg_mean = X.mean()[2]
-
-lang_std = X.std()[0]
-mat_std = X.std()[1]
-avg_std = X.std()[2]
-
-
-avg_std_list = [(300 + 3*i)  for i in range(101)]
-avg_std_list = (avg_std_list - avg_mean)/avg_std
-
-
-#CrossValidation Excercise
+#CrossValidation Excercise Accuracy tests:
 accuracy_type2 = []
 accuracy_overall = []
-for i in range(200):
+for i in range(10):
 
     X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed.drop(columns = ['Average']), Y, test_size=0.15)
     clf = RandomForestClassifier()
@@ -235,33 +223,59 @@ plt.legend(loc=1)
 plt.show()
 
 
-#Generate data to play with:
-#First: fit the RandomForestClassifier
-df = X_transformed.drop(columns = ['Average']).copy()
-list(df)
-len(list(df))
-X_transformed.shape
 
 
 
-sex       = [np.random.binomial(1,[.2])[0]]
-score     = [df.paamat.mean(), df.paaverbal.mean(), df.pce_biologia.mean(), df.pce_cs_sociales.mean(),
-             df.pce_fisica.mean(), df.pce_hria_y_geografia.mean(), df.pce_matematica.mean(), df.pce_quimica.mean()]
-region    = list(np.random.multinomial(1, [1/14.]*14, size=1)[0])
-took_exam = [1, 1, 1, 1, 1, 1]
+#Validate score Sensibility Analysis
 
-x_test = sex + score + region + took_exam
+math_lb_list = []
+lang_lb_list = []
+avg_lb_list = []
 
-y_test_hat = clf.predict(np.array(X_test)[np.newaxis,:])
+lang_mean = x_mean[0]
+mat_mean = x_mean[1]
+avg_mean = (lang_mean + mat_mean)/2
+
+lang_std = x_std[0]
+mat_std = x_std[1]
+avg_std = x_std[2]
 
 
+avg_std_list = [(300 + 3*i)  for i in range(101)]
+avg_std_list = (avg_std_list - avg_mean)/avg_std
 
-
+plt.scatter(X_test_transformed['paamat'],y_test_hat)
 
 for i in range(20):
 
-    #Second: asume different levels of y_hat and retrieve the accuracy rate in different lower bounds so we can assess the accuracy tradeoff:
-    #1.a. Assume a teacher with Avg = 400
+    X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed.drop(columns = ['Average']), Y, test_size=0.15)
+    clf = RandomForestClassifier()
+    clf = clf.fit(X_train_transformed, y_train)
+    y_test_hat = clf.predict_proba(X_test_transformed)[:,1]  #Prob of bad Teacher
+
+    clf.classes_
+
+    z = np.polyfit(y_test_hat, X_test_transformed['paamat'], 1) #Verbal
+    f = np.poly1d(z)
+    f = np.array(f)
+
+    lowest_m_std = (.25-f[1])/f[0]
+    lowest_m = lowest_v_std*mat_std + mat_mean
+
+
+    z = np.polyfit(y_test_hat, X_test_transformed['gpa'], 1) #Verbal
+    f = np.poly1d(z)
+    f = np.array(f)
+
+    lowest_v_std = (.50-f[1])/f[0]
+    lowest_v = lowest_v_std*lang_std + lang_mean
+
+
+
+    z = np.polyfit(scatter1[variable], scatter1.y_test_hat, npol)
+    f = np.poly1d(z)
+    x_new = np.linspace(scatter1[variable].min(), scatter1[variable].max(), 100)
+    y_new = f(x_new)
     y_pred_list = avg_std_list*f[0]  + f[1]
 
     for pred in y_pred_list:
@@ -270,6 +284,33 @@ for i in range(20):
 
     if i % 500 == 0:
         print('Iteration number: ' + str(i))
+
+
+
+
+z = np.polyfit(y_test_hat, X_test_transformed['paaverbal'], 1) #Verbal
+f = np.poly1d(z)
+f = np.array(f)
+lowest_v_std = (.9-f[1])/f[0]
+lowest_v = lowest_v_std*X.std()[0] + X.mean()[0]
+
+z = np.polyfit(y_test_hat, X_test_transformed['paamat'], 1) #Matematicas
+f = np.poly1d(z)
+f = np.array(f)
+lowest_m_std = (.9-f[1])/f[0]
+lowest_m = lowest_m_std*X.std()[1] + X.mean()[1]
+
+z = np.polyfit(y_test_hat, X_test_transformed['Average'], 1) #Average
+f = np.poly1d(z)
+f = np.array(f)
+lowest_avg_std = (.9-f[1])/f[0]
+lowest_avg = lowest_avg_std*X.std()[2] + X.mean()[2]
+
+lang_lb_list.append(lowest_v)
+math_lb_list.append(lowest_m)
+avg_lb_list.append(lowest_avg)
+
+
 
 
 pyplot.hist(np.array(lang_lb_list), 50, alpha=0.5, color='g', label='PAA - Verbal LB')
