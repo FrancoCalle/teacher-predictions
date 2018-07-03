@@ -28,14 +28,17 @@ q_v    = df["paa_verbal"].quantile(0.95)
 q_m = df["paa_matematica"].quantile(0.95)
 
 df = df[(df.paa_verbal<q_v) | (df.paa_matematica<q_m)]
-
 #Quick df clean:
 scores = ['paa_verbal', 'paa_matematica', 'nem', 'gpa', 'pce_hria_y_geografia', 'pce_biologia', 'pce_cs_sociales', 'pce_fisica', 'pce_matematica', 'pce_quimica']
 cat = ['region', 'male']
 df_s = df[scores].copy()
-x_mean = df[scores].mean()
-x_std = df[scores].std()
-df_s = (df[scores] - df[scores].mean())/df[scores].std()
+
+bygroup = 0
+if bygroup == 1:
+    df_s['periodo'] = df['periodo']
+    df_s = df_s.groupby('periodo').transform(lambda x: (x - x.mean()) / x.std())
+else:
+    df_s = (df[scores] - df[scores].mean())/df[scores].std()
 df_s['Average'] = (df['paa_verbal'] + df['paa_matematica'])/2
 
 df_c = df[cat].copy()
@@ -146,9 +149,8 @@ def gen_predictions(Classifier, X_train, X_test, y_train):
 df_rf_test , y_test_hat, y_test_predict = gen_predictions(RandomForestClassifier, X_train_transformed, X_test_transformed, y_train)
 #df_rf_test.to_csv(r'C:\Users\Franco\GitHub\teacher-predictions\output\data_predictions.csv')
 
-
 #Accuracy tests:
-accuracy = np.mean(y_test_predict == y_train)
+accuracy = np.mean(y_test_predict == y_test)
 type1_error = 1 - np.mean(y_train[y_train==1] == y_test_predict[y_train==1]) #Type 1 error: Probabilidad de predecir que no es malo cuando si lo es
 type2_error = 1 - np.mean(y_train[y_test_predict == 1] == y_test_predict[y_test_predict == 1]) #probabilidad de predecir que profesor es malo cuando en realidad es bueno (Error tipo 2)
 
@@ -193,8 +195,7 @@ plt.bar(ticks,accuracy_list, align='center', alpha=0.7, color = 'gray')
 plt.xticks(ticks, ticks_label)
 plt.xlabel('Y hat')
 plt.ylabel('Accuracy: 1 - Pr(failure)')
-plt.title('Likelihood of success when predicting bad teacher')
-plt.savefig(r'C:\\Users\\Franco\\GitHub\\teacher-predictions\\output\\accuracy.png', bbox_inches='tight')
+plt.savefig(r'D:\\Google Drive\\Teacher Quality\\4. Work\\Prediction\\Appendix\\accuracy.pdf', bbox_inches='tight')
 
 
 
@@ -276,158 +277,94 @@ plt.show()
 ##########################################
 #Start with the Score Sensibility analysis
 ##########################################
-
+from sklearn import tree, svm
+from sklearn.ensemble import AdaBoostClassifier, AdaBoostRegressor
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 #CrossValidation Excercise Accuracy tests:
-accuracy_type2 = []
-accuracy_overall = []
-for i in range(300):
+accuracy_type2_rf = []
+accuracy_overall_rf = []
+
+accuracy_type2_dt = []
+accuracy_overall_dt = []
+
+accuracy_type2_svc = []
+accuracy_overall_svc = []
+
+accuracy_type2_lr = []
+accuracy_overall_lr = []
+
+# Cross Validate
+
+for i in range(150):
 
     X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed.drop(columns = ['Average', 'paa_avg']), Y, test_size=0.15)
+
     clf = RandomForestClassifier()
     clf = clf.fit(X_train_transformed, y_train)
     y_test_hat = clf.predict(X_test_transformed)  #Prob of bad Teacher
     acc_overall = np.mean(y_test == y_test_hat)
     acc_type2 = np.mean(y_test[y_test_hat==1] == y_test_hat[y_test_hat==1])
-    accuracy_overall.append(acc_overall)
-    accuracy_type2.append(acc_type2)
-
-sns.kdeplot(accuracy_overall, alpha=0.8, color = 'orange', label = 'Overall')
-sns.kdeplot(accuracy_type2, alpha=0.8, color = 'gray', label = 'Bad Teacher')
-plt.xlabel('Prediction success')
-plt.ylabel('Density')
-plt.title('Cross validation: Accuracy of Random Forest')
-plt.legend(loc=1)
-plt.savefig(r'C:\\Users\\Franco\\GitHub\\teacher-predictions\\output\\cross_validation_accuracy.png', bbox_inches='tight')
-
-
-
-
-
-accuracy_type2_dt = []
-accuracy_type2_rf = []
-
-for i in range(300):
-
-    X_train_transformed, X_test_transformed, y_train, y_test = train_test_split(X_transformed.drop(columns = ['Average']), Y, test_size=0.15)
-    clf = RandomForestClassifier()
-    clf = clf.fit(X_train_transformed, y_train)
-    y_test_hat = clf.predict(X_test_transformed)  #Prob of bad Teacher
-    acc_type2 = np.mean(y_test[y_test_hat==1] == y_test_hat[y_test_hat==1])
+    accuracy_overall_rf.append(acc_overall)
     accuracy_type2_rf.append(acc_type2)
 
     clf = DecisionTreeClassifier()
     clf = clf.fit(X_train_transformed, y_train)
     y_test_hat = clf.predict(X_test_transformed)  #Prob of bad Teacher
+    acc_overall = np.mean(y_test == y_test_hat)
     acc_type2 = np.mean(y_test[y_test_hat==1] == y_test_hat[y_test_hat==1])
+    accuracy_overall_dt.append(acc_overall)
     accuracy_type2_dt.append(acc_type2)
 
+    clf = LogisticRegression()
+    clf = clf.fit(X_train_transformed, y_train)
+    y_test_hat = clf.predict(X_test_transformed)  #Prob of bad Teacher
+    acc_overall = np.mean(y_test == y_test_hat)
+    acc_type2 = np.mean(y_test[y_test_hat==1] == y_test_hat[y_test_hat==1])
+    accuracy_overall_lr.append(acc_overall)
+    accuracy_type2_lr.append(acc_type2)
 
-sns.kdeplot(accuracy_type2_rf, alpha=0.8, color = 'orange', label = 'Random Forest')
-sns.kdeplot(accuracy_type2_dt, alpha=0.8, color = 'gray', label = 'Decision Tree')
+    print(f"Crosvalidation: {i}")
+
+sns.kdeplot(accuracy_overall_rf, alpha=0.8, color = 'orange', label = 'Overall Accuracy')
+sns.kdeplot(accuracy_type2_rf, alpha=0.8, color = 'gray', label = 'Type 2 Error')
 plt.xlabel('Prediction success')
 plt.ylabel('Density')
-plt.title('Cross validation: Accuracy of Random Forest')
 plt.legend(loc=1)
-plt.savefig(r'C:\\Users\\Franco\\GitHub\\teacher-predictions\\output\\cross_validation_accuracy_all.pdf', bbox_inches='tight')
+plt.savefig(r'D:\\Google Drive\\Teacher Quality\\4. Work\\Prediction\\Appendix\\cross_validation_accuracy.pdf', bbox_inches='tight')
 
 
+sns.kdeplot(accuracy_overall_rf, alpha=0.8, color = 'orange', label = 'Random Forest')
+sns.kdeplot(accuracy_overall_dt, alpha=0.8, color = 'gray', label = 'Decision Tree')
+sns.kdeplot(accuracy_overall_lr, alpha=0.8, color = 'black', label = 'Logistic Regression')
+plt.xlabel('Prediction success')
+plt.ylabel('Density')
+plt.legend(loc=1)
+plt.savefig(r'D:\\Google Drive\\Teacher Quality\\4. Work\\Prediction\\Appendix\\cv_model_selection_std2.pdf', bbox_inches='tight')
+plt.savefig(r'D:\\Google Drive\\Teacher Quality\\4. Work\\Prediction\\Appendix\\cv_model_selection.pdf', bbox_inches='tight')
 
+#Plot Type 2 error:
+sns.kdeplot(accuracy_type2_rf, alpha=0.8, color = 'orange', label = 'Random Forest')
+sns.kdeplot(accuracy_type2_dt, alpha=0.8, color = 'gray', label = 'Decision Tree')
+#sns.kdeplot(accuracy_type2_lr, alpha=0.8, color = 'black', label = 'Logistic Regression')
+plt.xlabel('Prediction success')
+plt.ylabel('Density')
+plt.legend(loc=1)
+plt.savefig(r'D:\\Google Drive\\Teacher Quality\\4. Work\\Prediction\\Appendix\\cv_model_selection_e2_std2.pdf', bbox_inches='tight')
 
+clf = RandomForestClassifier()
+clf = clf.fit(X_train_transformed, y_train)
+y_test_hat = clf.predict(X_test_transformed)  #Prob of bad Teacher
+acc_overall = np.mean(y_test == y_test_hat)
+acc_type2 = np.mean(y_test[y_test_hat==1] == y_test_hat[y_test_hat==1])
+accuracy_overall_rf.append(acc_overall)
+accuracy_type2_rf.append(acc_type2)
 
+importance = regr_1.feature_importances_
+FeatImp = {}
 
+for x in range(0,len(feature_list)):
+    if importance[x]>0:
+        FeatImp[feature_list[x]]=importance[x]
 
-
-
-
-
-
-scatter = X_train_transformed.copy()
-scatter['y'] = y_train
-scatter['randn'] = np.random.randn(X_train_transformed.shape[0])
-scatter = scatter.sort_values(by = ['randn'])
-scatter = scatter[scatter['randn'] < -2]
-scatter.shape
-scatter.randn.mean()
-
-
-
-plt.scatter(scatter.paaverbal[y_train == 1], scatter.paamat[y_train == 1], c="r", alpha=0.5, label="Bad Teachers")
-plt.scatter(scatter.paaverbal[y_train == 0], scatter.paamat[y_train == 0], c="b", alpha=0.5, label="Good Teachers")
-plt.xlabel("PAA - Verbal")
-plt.ylabel("PAA - Math")
-plt.title('Good and bad teachers')
-plt.legend(loc=2)
-plt.savefig(r'C:\\Users\\Franco\\GitHub\\teacher-predictions\\output\\scatter_y01.pdf', bbox_inches='tight')
-
-
-
-
-
-
-
-
-
-
-%pylab inline
-
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
-import scipy.stats as stats
-import neurolab as nl
-from sklearn.datasets import make_classification
-from sklearn import neighbors, tree, svm
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.naive_bayes import GaussianNB
-
-xdf = X_transformed.drop(columns = ['Average', 'paa_avg'])
-list(xdf)
-### Helper functions for plotting
-# A function to plot observations on scatterplot
-def plotcases(ax):
-    plt.scatter(xdf['nem'],xdf['paa_avg'],c=Y, cmap=cm.coolwarm, axes=ax, alpha=0.6, s=20, lw=0.4)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.tick_params(axis='both', which='both', left='off', right='off', top='off', bottom='off',
-                   labelleft='off', labelright='off', labeltop='off', labelbottom='off')
-
-# a function to draw decision boundary and colour the regions
-def plotboundary(ax, Z):
-    ax.pcolormesh(xx, yy, Z, cmap=cm.coolwarm, alpha=0.1)
-    ax.contour(xx, yy, Z, [0.5], linewidths=0.75, colors='k')
-
-
-### create plot canvas with 6x4 plots
-fig = plt.figure(figsize(12,16), dpi=1600)
-plt.subplots_adjust(hspace=.5)
-
-nrows = 7
-ncols = 4
-gridsize = (nrows, ncols)
-
-
-### 1. plot the problem ###
-ax0 = plt.subplot2grid(gridsize,[0,0])
-plotcases(ax0)
-ax0.title.set_text("Problem")
-
-# take boundaries from first plot and define mesh of points for plotting decision spaces
-x_min, x_max = plt.xlim()
-y_min, y_max = plt.ylim()
-nx, ny = 100, 100   # this sets the num of points in the mesh
-xx, yy = np.meshgrid(np.linspace(x_min, x_max, nx),
-                     np.linspace(y_min, y_max, ny))
-
-rf = RandomForestClassifier()
-rf.fit(xdf, Y)
-
-Z = rf.predict_proba(np.c_[xx.ravel(), yy.ravel()])
-Z = Z[:,1].reshape(xx.shape)
-
-ax = plt.subplot2grid(gridsize, [3,1])
-ax.title.set_text("Random forest")
-plotboundary(ax, Z)
-plotcases(ax)
-plt.savefig(r'C:\\Users\\Franco\\GitHub\\teacher-predictions\\output\\random_forest.pdf', bbox_inches='tight')
+for key, value in sorted(FeatImp.iteritems(), key=lambda (k,v): (v,k), reverse=True):
+    print "%s: %s" % (key, value)
